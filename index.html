@@ -1,1 +1,633 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#81cbe7">
+  <meta name="description" content="DANIEL 的互動式 3D 工作島：六個工作區域、43 個常用連結，使用 Three.js 製作。">
+  <title>我的 3D 工作島｜danielwork</title>
+  <link rel="stylesheet" href="./css/style.css">
+  <!-- Three.js 與 OrbitControls 必須固定為同一版本。無需 Node.js 或建置步驟。 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script src="./data/links.js"></script>
+</head>
+<body>
+  <main id="stage" aria-label="可旋轉縮放的 3D 小島，點擊六棟建築開啟工作分類"></main>
+  <div class="shine" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-kicker">DANIEL · WORK ISLAND</div>
+      <h1>我的 3D 工作島</h1>
+      <p>六個工作區域 · 一座小島 · 快速前往常用工具</p>
+    </div>
+    <div class="search" id="search-container">
+      <label class="search-box"><span class="search-symbol" aria-hidden="true">⌕</span>
+        <input id="search-input" type="search" placeholder="搜尋連結，例如：報名、點名…" aria-label="搜尋所有連結" autocomplete="off">
+      </label>
+      <div id="search-results" class="search-results" hidden aria-live="polite"></div>
+    </div>
+  </header>
+  <div id="labels" aria-label="3D 建築名稱標籤"></div>
+  <div class="instructions" aria-hidden="true"><strong>操作方式</strong><br>拖曳旋轉視角<br>滾輪放大／縮小<br>點擊建築瀏覽連結</div>
+  <nav class="bottom-bar" id="nav" aria-label="六大工作分類"></nav>
+  <button class="reset" id="reset" type="button" aria-label="回到小島全景">⌂ 回到全景</button>
+  <aside class="sidebar" id="sidebar" role="region" aria-label="工作分類連結" aria-hidden="true">
+    <button class="sidebar-close" id="close-panel" type="button" aria-label="關閉連結面板">×</button>
+    <div class="sidebar-head">
+      <div class="sidebar-eyebrow">WORK SPACE / <span id="section-number">01</span></div>
+      <h2 id="section-title">工作分類</h2>
+      <p id="section-description"></p>
+      <span id="section-count" class="sidebar-count"></span>
+    </div>
+    <div id="link-list" class="link-list"></div>
+    <div class="sidebar-foot">連結會在新分頁開啟；部分 Google 工具需要登入或額外存取權限。</div>
+  </aside>
+  <div id="loading" class="loading" role="status"><div class="loading-ring"></div><strong>正在建造工作島</strong><span>載入 Three.js 與 Low-poly 場景…</span></div>
+  <div id="fatal" class="fatal" role="alert" hidden><strong>3D 場景無法載入</strong><p id="fatal-message">請檢查網路連線或瀏覽器的 WebGL 支援。</p><button onclick="location.reload()" type="button">重新載入</button></div>
+  <noscript>此網站需要啟用 JavaScript 才能使用 3D 互動及連結選單。</noscript>
+  <script>
+    window.__DANIELWORK_READY__ = false;
+    window.__DANIELWORK_FAILED__ = false;
+    function showFatal(message) {
+      if (window.__DANIELWORK_READY__ || window.__DANIELWORK_FAILED__) return;
+      window.__DANIELWORK_FAILED__ = true;
+      document.getElementById('loading').hidden = true;
+      document.getElementById('fatal-message').textContent = message || '請檢查網路連線或瀏覽器的 WebGL 支援。';
+      document.getElementById('fatal').hidden = false;
+    }
+    window.addEventListener('error', e => { if (!window.__DANIELWORK_READY__) showFatal('載入失敗：' + (e.message || '模組或資源無法讀取')); });
+    window.addEventListener('unhandledrejection', e => { if (!window.__DANIELWORK_READY__) showFatal('載入失敗：' + (e.reason?.message || '請檢查網路及瀏覽器')); });
+    setTimeout(() => { if (!window.__DANIELWORK_READY__) showFatal('載入逾時，請檢查網路或 CDN 是否被封鎖。'); }, 22000);
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+    // 導覽與連結資料獨立存放於 data/links.js，修改網址不需要動 3D 程式。
+    const ZONES = window.DANIEL_WORK_DATA;
+    if (!Array.isArray(ZONES) || ZONES.length !== 6) throw Error('data/links.js 未載入六個工作分類');
+    const stage = document.getElementById('stage');
+    const sidebar = document.getElementById('sidebar');
+    const nav = document.getElementById('nav');
+    const labelLayer = document.getElementById('labels');
+    const searchInput = document.getElementById('search-input');
+    const searchResults = document.getElementById('search-results');
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const tColor = (hex) => new THREE.Color(hex);
+
+    let seed = 127003;
+    function rand() { seed = (1664525*seed+1013904223) >>> 0; return seed/4294967296; }
+    function range(a,b) { return a + (b-a)*rand(); }
+    const sharedMaterials = new Map();
+    function mat(color, options) {
+      if (options) return new THREE.MeshStandardMaterial({color,roughness:.83,flatShading:true,...options});
+      if (!sharedMaterials.has(color)) sharedMaterials.set(color, new THREE.MeshStandardMaterial({color,roughness:.88,flatShading:true}));
+      return sharedMaterials.get(color);
+    }
+    function mesh(parent, geometry, material, x=0,y=0,z=0, cast=true) {
+      const m = new THREE.Mesh(geometry, material);
+      m.position.set(x,y,z); m.castShadow=cast; m.receiveShadow=true;
+      parent.add(m); return m;
+    }
+    function box(parent,w,h,d,color,x=0,y=0,z=0) { return mesh(parent,new THREE.BoxGeometry(w,h,d),typeof color==='string'?mat(color):color,x,y,z); }
+    function cyl(parent,rt,rb,h,sides,color,x=0,y=0,z=0) { return mesh(parent,new THREE.CylinderGeometry(rt,rb,h,sides),typeof color==='string'?mat(color):color,x,y,z); }
+    function ico(parent,r,color,x,y,z,detail=0) { return mesh(parent,new THREE.IcosahedronGeometry(r,detail),typeof color==='string'?mat(color):color,x,y,z); }
+    function line3(parent,points,color,width=.04) {
+      for(let i=0;i<points.length-1;i++) {
+        const a=new THREE.Vector3(...points[i]),b=new THREE.Vector3(...points[i+1]);
+        const d=new THREE.Vector3().subVectors(b,a);
+        const m=mesh(parent,new THREE.CylinderGeometry(width,width,d.length(),5),mat(color),...(a.clone().add(b).multiplyScalar(.5).toArray()));
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
+      }
+    }
+    const SCENE = new THREE.Scene();
+    SCENE.fog = new THREE.Fog('#9cdbed',35,86);
+    const camera = new THREE.PerspectiveCamera(42,1,.1,140);
+    const initialCam = new THREE.Vector3(16.5,17.2,27.5);
+    const initialTarget = new THREE.Vector3(0,.55,0);
+    camera.position.copy(initialCam);
+    let renderer;
+    try { renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance'}); }
+    catch(e) { showFatal('無法啟動 WebGL，請使用支援 WebGL 的 Chrome 或 Edge。'); throw e; }
+    renderer.outputColorSpace=THREE.SRGBColorSpace;
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure=1.22;
+    renderer.shadowMap.enabled=true;
+    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    renderer.setClearColor('#a1d7e4',0);
+    renderer.setPixelRatio(Math.min(devicePixelRatio||1, matchMedia('(max-width:760px)').matches?1.5:2));
+    stage.appendChild(renderer.domElement);
+    const controls=new OrbitControls(camera,renderer.domElement);
+    controls.target.copy(initialTarget);
+    controls.enableDamping=true; controls.dampingFactor=.065;
+    controls.enablePan=false;
+    controls.minDistance=12; controls.maxDistance=49;
+    controls.minPolarAngle=.28; controls.maxPolarAngle=Math.PI/2.09;
+    controls.update();
+    const hemi=new THREE.HemisphereLight('#fff6d8','#6798a7',2.45); SCENE.add(hemi);
+    const sun=new THREE.DirectionalLight('#fff6df',3.2);
+    sun.position.set(-9,24,16); sun.castShadow=true;
+    sun.shadow.mapSize.set(matchMedia('(max-width:760px)').matches?1024:2048,matchMedia('(max-width:760px)').matches?1024:2048);
+    Object.assign(sun.shadow.camera,{left:-19,right:19,top:19,bottom:-19,near:.5,far:60});
+    sun.shadow.bias=-.00013; SCENE.add(sun);
+    // 全場尺寸以世界單位表示，島面草地約位於 Y = 0.70。
+    const GROUND=.70;
+
+    // ----- 低多邊形海洋：實際 Three.js 平面網格與起伏，不是背景圖片 -----
+    const waterGeo=new THREE.PlaneGeometry(135,135,43,43);
+    waterGeo.rotateX(-Math.PI/2);
+    const waterOrigin=Float32Array.from(waterGeo.attributes.position.array);
+    const water=mesh(SCENE,waterGeo,mat('#50bad2',{metalness:.05,roughness:.53,flatShading:true,side:THREE.DoubleSide}),0,-2.5,0,false);
+    water.receiveShadow=false;
+    const foamMat=mat('#e8ffff',{transparent:true,opacity:.62,side:THREE.DoubleSide});
+    const foams=[];
+    for(let i=0;i<90;i++) {
+      const a=range(0,Math.PI*2), r=range(10.0,38.0);
+      const f=mesh(SCENE,new THREE.PlaneGeometry(range(.22,1.2),range(.035,.10)),foamMat,Math.cos(a)*r,-2.44,Math.sin(a)*r,false);
+      f.rotation.x=-Math.PI/2; f.rotation.z=range(-Math.PI,Math.PI); f.userData.shift=range(0,6.28);
+      f.receiveShadow=false; foams.push(f);
+    }
+
+    // ----- 不規則浮島：岩石切面每個三角形著色，草地與海岸都是立體網格 -----
+    const SEG=32;
+    const outline=[];
+    for(let i=0;i<SEG;i++) {
+      const ang=i*2*Math.PI/SEG;
+      outline.push({ang,scale:range(.956,1.041)});
+    }
+    function ringPoint(i,rx,rz,y) {
+      const v=outline[(i+SEG)%SEG];
+      return [Math.cos(v.ang)*rx*v.scale,y,Math.sin(v.ang)*rz*v.scale];
+    }
+    function quadVertices(p1,p2,p3,p4,positions,colors,palette) {
+      for(const tri of [[p1,p2,p3],[p1,p3,p4]]) {
+        const c=tColor(palette[Math.floor(rand()*palette.length)]);
+        for(const p of tri) { positions.push(...p); colors.push(c.r,c.g,c.b); }
+      }
+    }
+    function vertexSurface(positions,colors) {
+      const g=new THREE.BufferGeometry();
+      g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+      g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+      g.computeVertexNormals();
+      return g;
+    }
+    function makeCliff() {
+      const pos=[],col=[];
+      const rockPalette=['#9c9e9b','#b7aaa0','#c5afa1','#b0b3a9','#969fa0','#c8b8a9'];
+      for(let i=0;i<SEG;i++) {
+        const j=(i+1)%SEG;
+        quadVertices(ringPoint(i,10.2,8.45,.38),ringPoint(j,10.2,8.45,.38),ringPoint(j,9.65,7.92,-1.48),ringPoint(i,9.65,7.92,-1.48),pos,col,rockPalette);
+        quadVertices(ringPoint(i,9.65,7.92,-1.48),ringPoint(j,9.65,7.92,-1.48),ringPoint(j,7.75,6.43,-3.46),ringPoint(i,7.75,6.43,-3.46),pos,col,rockPalette);
+      }
+      mesh(SCENE,vertexSurface(pos,col),mat('#ffffff',{vertexColors:true,side:THREE.DoubleSide}),0,0,0);
+    }
+    function makeSurface() {
+      const pos=[],col=[];
+      for(let i=0;i<SEG;i++) {
+        const j=(i+1)%SEG;
+        quadVertices(ringPoint(i,10.22,8.46,.40),ringPoint(j,10.22,8.46,.40),ringPoint(j,9.40,7.45,.54),ringPoint(i,9.40,7.45,.54),pos,col,['#f0cf96','#efd9ab','#e9cb92','#f1dbb1']);
+        quadVertices(ringPoint(i,9.40,7.45,.54),ringPoint(j,9.40,7.45,.54),ringPoint(j,0.25,0.2,.695),ringPoint(i,.25,.2,.695),pos,col,['#87bd74','#8ccf76','#85c574','#92ce7e','#7ebe72']);
+        // 中間填滿避免草地中央出現缺口。
+        const c=tColor('#8bc47a');
+        for(const p of [[0,.692,0],ringPoint(i,.25,.2,.695),ringPoint(j,.25,.2,.695)]) { pos.push(...p); col.push(c.r,c.g,c.b); }
+      }
+      mesh(SCENE,vertexSurface(pos,col),mat('#ffffff',{vertexColors:true,side:THREE.DoubleSide}),0,0,0,false);
+    }
+    makeCliff(); makeSurface();
+
+    // 彎曲道路：沒有圖片貼圖、可以自由更換路徑。
+    function path(points,width=.63,color='#e6d3b1',height=.765) {
+      const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(p[0],height,p[1])));
+      const samples=curve.getPoints(25),verts=[],indexes=[];
+      samples.forEach((p,i) => {
+        const a=samples[Math.max(0,i-1)],b=samples[Math.min(samples.length-1,i+1)];
+        const tangent=new THREE.Vector3().subVectors(b,a).normalize();
+        const perp=new THREE.Vector3(-tangent.z,0,tangent.x).multiplyScalar(width/2);
+        verts.push(p.x+perp.x,p.y,p.z+perp.z,p.x-perp.x,p.y,p.z-perp.z);
+        if(i<samples.length-1) { const k=i*2; indexes.push(k,k+1,k+2,k+1,k+3,k+2); }
+      });
+      const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setIndex(indexes);g.computeVertexNormals();
+      mesh(SCENE,g,mat(color,{side:THREE.DoubleSide}),0,0,0,false);
+    }
+    path([[-.3,-.2],[-2.3,-1.2],[-4.95,-.9]],.78);
+    path([[0,-.4],[0,-2.3],[.1,-3.65]],.85);
+    path([[.4,-.3],[2.5,-1.05],[5.15,-.60]],.76);
+    path([[-.6,.5],[-2.35,1.7],[-5.0,2.14]],.75);
+    path([[0,.5],[0,2.0],[0,3.0]],.76);
+    path([[.6,.55],[2.55,1.7],[5.1,2.1]],.70);
+    // 廣場與環形磚道
+    cyl(SCENE,1.67,1.67,.11,24,'#eadcc2',0,.781,0);
+    cyl(SCENE,1.44,1.44,.13,24,'#d5c19f',0,.866,0);
+    cyl(SCENE,1.19,1.19,.13,24,'#efe3c9',0,.941,0);
+    const plazaRing=mesh(SCENE,new THREE.TorusGeometry(1.44,.042,5,32),mat('#f7f0db'),0,1.013,0,false);plazaRing.rotation.x=-Math.PI/2;
+
+    // ----- 共用建築零件 -----
+    const glass=mat('#85d0dc',{metalness:.08,roughness:.22,emissive:'#3e829c',emissiveIntensity:.10});
+    const glassWarm=mat('#f6d79c',{metalness:.02,roughness:.27,emissive:'#f0bb77',emissiveIntensity:.36});
+    const door=mat('#547f8a');
+    const roofBlue=mat('#477d9c');
+    const roofRed=mat('#bf7563');
+    const cream=mat('#fff2d8');
+    const darkTrim=mat('#647c84');
+    const rootById=new Map();
+    const anchorById=new Map();
+    const clickable=[];
+    const zonesAt={
+      kaohsiung:{x:-5.25,z:-2.63}, school:{x:0,z:-4.93}, youth:{x:5.35,z:-2.58},
+      travel:{x:-5.37,z:3.67}, language:{x:0,z:4.43}, personal:{x:5.27,z:3.67}
+    };
+    function setPick(id,group,anchor=4.1) {
+      const p=zonesAt[id]; group.position.set(p.x,GROUND,p.z);
+      group.traverse(o=>{if(o.isMesh){o.userData.zone=id; clickable.push(o);}});
+      SCENE.add(group); rootById.set(id,group);
+      anchorById.set(id,new THREE.Vector3(p.x,GROUND+anchor,p.z));
+    }
+    function foundation(g,w,d) {
+      box(g,w+.4,.18,d+.42,'#d6c5a6',0,.09,0);
+      box(g,w+.25,.06,d+.23,'#f7e5cb',0,.20,0);
+    }
+    function frontWindow(g,x,y,z,w=.58,h=.78,warm=false) {
+      box(g,w+.12,h+.12,.11,cream,x,y,z);
+      box(g,w,h,.13,warm?glassWarm:glass,x,y,z+.082);
+      box(g,w+.16,.10,.22,darkTrim,x,y+h/2+.09,z+.08);
+    }
+    function sideWindow(g,x,y,z,w=.57,h=.78) {
+      box(g,.11,h+.10,w+.10,cream,x,y,z);
+      box(g,.135,h,w,glass,x+.045,y,z);
+    }
+    function frontDoor(g,x,y,z,w=.68,h=1.12) {
+      box(g,w+.15,h+.14,.13,'#f0e7cd',x,y,z);
+      box(g,w,h,.14,door,x,y,z+.083);
+      box(g,.08,.08,.16,'#ffdba8',x+w*.28,y,z+.18);
+    }
+    function slopeRoof(g,w,d,y,height,color) {
+      const a=Math.atan2(height,w/2),length=Math.hypot(w/2,height);
+      const left=box(g,length,.17,d,color,-w/4,y+height/2,0);left.rotation.z=a;
+      const right=box(g,length,.17,d,color,w/4,y+height/2,0);right.rotation.z=-a;
+      // 屋脊
+      box(g,.14,.12,d+.05,'#f5ead6',0,y+height,0);
+    }
+    function planting(g,x,z) { ico(g,.24,'#68a56b',x,.34,z);ico(g,.18,'#a3d08b',x+.22,.36,z+.1); }
+    function steps(g,w,z) { for(let i=0;i<3;i++)box(g,w+.16*i,.10,.28,'#efddc0',0,.08+.1*i,z+i*.24); }
+
+    // 01：高雄召會 → 現代綜合辦公中心，無宗教建築或符號。
+    {
+      const g=new THREE.Group();foundation(g,3.35,2.45);
+      box(g,3.35,2.6,2.45,'#edd7ad',0,1.55,0);
+      box(g,3.42,.16,2.65,'#537f94',0,2.97,0);
+      box(g,3.02,.18,2.25,'#65abc3',0,3.07,-.10);
+      box(g,3.38,.15,.52,'#f5ecdf',0,2.47,1.50);
+      for(const x of [-1.12,-.38,.38,1.12]) {
+        frontWindow(g,x,2.15,1.29,.53,.62);
+        if(Math.abs(x)>.5) frontWindow(g,x,.96,1.29,.55,.64,true);
+      }
+      frontDoor(g,0,.93,1.3,.88,1.32);
+      for(const x of [-1.70,1.70]) box(g,.13,2.58,.16,'#faf0dd',x,1.54,1.30);
+      sideWindow(g,1.72,2.13,-.52,.58,.66);
+      sideWindow(g,1.72,1.11,.55,.58,.66);
+      box(g,2.0,.10,.35,'#627b8a',0,3.22,-.60); // 無標誌屋頂
+      planting(g,-1.6,1.57); planting(g,1.58,1.63);steps(g,1.40,1.62);
+      setPick('kaohsiung',g,3.88);
+    }
+
+    // 02：中學組 → 紅磚校舍與球場。
+    {
+      const g=new THREE.Group(); foundation(g,3.56,2.55);
+      box(g,3.56,2.47,2.55,'#dca173',0,1.46,0);
+      box(g,3.86,.18,2.88,'#658c9c',0,2.79,0);
+      box(g,3.55,.12,.22,'#f4ddb9',0,2.24,1.36);
+      for(const x of [-1.27,-.45,.45,1.27]) {
+        frontWindow(g,x,2.05,1.34,.45,.62);
+        if(Math.abs(x)>.6) frontWindow(g,x,1.01,1.34,.48,.63,true);
+      }
+      frontDoor(g,0,.92,1.35,.84,1.28);
+      // 校舍上方圓形時鐘：普通校園設計。
+      cyl(g,.28,.28,.065,18,cream,0,2.66,1.47).rotation.x=Math.PI/2;
+      const clockHand=box(g,.045,.18,.06,'#4a687e',0,2.70,1.52);
+      clockHand.rotation.z=.25;
+      sideWindow(g,1.85,1.65,0,.70,.82);
+      steps(g,1.34,1.62);
+      setPick('school',g,3.55);
+      // 小型球場在校舍附近，以幾何線段組成。
+      const court=mesh(SCENE,new THREE.PlaneGeometry(3.7,2.1),mat('#d9785f',{side:THREE.DoubleSide}),.36,.762,-7.17,false);
+      court.rotation.x=-Math.PI/2;court.rotation.z=.02;court.receiveShadow=false;
+      const courtLines=new THREE.Group();courtLines.position.set(.36,.773,-7.17);
+      const courtRect=[[-1.69,0,-.9],[1.69,0,-.9],[1.69,0,.9],[-1.69,0,.9],[-1.69,0,-.9]];
+      line3(courtLines,courtRect,'#f7e8ce',.025);
+      line3(courtLines,[[0,0,-.9],[0,0,.9]],'#f7e8ce',.025);
+      const circle=mesh(courtLines,new THREE.TorusGeometry(.40,.026,4,32),mat('#fff3d5'),0,.012,0,false);circle.rotation.x=-Math.PI/2;
+      SCENE.add(courtLines);
+    }
+
+    // 03：社青組 → 現代玻璃活動中心，波形屋頂，不用任何宗教符號。
+    {
+      const g=new THREE.Group();foundation(g,3.50,2.70);
+      box(g,3.50,2.32,2.70,'#dcb186',0,1.43,0);
+      box(g,3.2,1.77,.08,mat('#6dacae'),0,1.49,1.41);
+      for(const x of [-1.15,-.38,.38,1.15]) frontWindow(g,x,1.53,1.53,.54,1.37,true);
+      frontDoor(g,0,.90,1.54,.73,1.22);
+      box(g,3.92,.16,3.1,'#638c9b',0,2.66,0);
+      const canopy=box(g,4.08,.24,3.15,'#e4e0cb',0,2.82,0);
+      canopy.rotation.z=.10;
+      for(const x of [-1.40,1.40]) box(g,.13,.90,.13,'#fff1d8',x,.45,1.94);
+      box(g,3.40,.13,.80,'#e9deca',0,2.04,1.73);
+      sideWindow(g,1.82,1.48,0,.73,1.24);
+      planting(g,-1.85,1.70);planting(g,1.88,1.70);
+      setPick('youth',g,3.70);
+    }
+
+    // 04：帶團出國 → 港口旅行服務站與立體船隻。
+    {
+      const g=new THREE.Group();foundation(g,3.12,2.12);
+      box(g,3.12,1.97,2.12,'#f6deaa',0,1.28,0);
+      slopeRoof(g,3.5,2.58,2.27,.72,roofBlue);
+      frontDoor(g,0,.91,1.12,.72,1.25);
+      frontWindow(g,-1.0,1.28,1.12,.57,.76,true);
+      frontWindow(g,1.0,1.28,1.12,.57,.76,true);
+      box(g,2.0,.34,.11,'#477f9c',0,2.25,1.25);
+      // 簡潔行李箱標誌（不使用任何宗教符號）。
+      box(g,.26,.20,.05,'#f7f3e5',0,2.26,1.34);
+      box(g,.13,.05,.06,'#f7f3e5',0,2.41,1.34);
+      planting(g,-1.51,1.42); steps(g,1.11,1.43);
+      setPick('travel',g,3.77);
+      // 碼頭板道從海灘往外延伸。
+      box(SCENE,1.77,.18,3.15,'#b98960',-7.0,.10,7.65);
+      for(let i=0;i<9;i++) box(SCENE,1.92,.045,.14,'#d7a977',-7.0,.22,6.26+i*.35);
+      for(const x of [-7.86,-6.15]) for(const z of [6.30,7.75,9.06]) cyl(SCENE,.10,.10,.84,7,'#987553',x,-.26,z);
+      // 簡單幾何遊艇，停在碼頭旁的海面上。
+      const boat=new THREE.Group();boat.position.set(-9.05,-2.02,9.18);
+      mesh(boat,new THREE.ConeGeometry(.77,2.9,4),mat('#eef2e8'),0,.15,0).rotation.x=Math.PI/2;
+      box(boat,.98,.43,1.20,'#f8f0d7',0,.59,0);
+      box(boat,.80,.31,.55,glass,0,.91,-.10);
+      box(boat,.05,1.66,.05,'#e9dfc7',.17,1.85,0);
+      const sail=mesh(boat,new THREE.ConeGeometry(.68,1.52,3),mat('#fff7ea',{side:THREE.DoubleSide}),-.25,1.62,0);
+      sail.rotation.z=-.13; sail.rotation.y=Math.PI/6;
+      SCENE.add(boat);
+    }
+
+    // 05：外語專項 → 玻璃圖書／學習中心（不做宗教風格塔樓）。
+    {
+      const g=new THREE.Group();foundation(g,3.22,2.34);
+      box(g,3.22,2.16,2.34,'#e1e9d7',0,1.37,0);
+      box(g,3.28,.16,2.58,'#718a9a',0,2.56,0);
+      box(g,3.30,.14,2.58,'#e7eadb',0,2.67,-.10);
+      for(const x of [-1.04,-.35,.35,1.04]) frontWindow(g,x,1.53,1.25,.52,1.36,true);
+      frontDoor(g,0,.82,1.32,.75,1.15);
+      sideWindow(g,1.68,1.46,0,.74,1.29);
+      // 書本疊放造型，不包含任何圖騰。
+      for(let i=0;i<4;i++) box(g,.48,.12,.35,['#5c9ba8','#d2ae7f','#879bc7','#75aa91'][i],1.25,.41+i*.12,1.60);
+      steps(g,1.24,1.47);planting(g,-1.67,1.54);
+      setPick('language',g,3.48);
+    }
+
+    // 06：個人使用 → 紅頂生活小屋與庭院。
+    {
+      const g=new THREE.Group();foundation(g,2.87,2.33);
+      box(g,2.87,2.03,2.33,'#f8e8c8',0,1.27,0);
+      slopeRoof(g,3.29,2.75,2.38,.94,roofRed);
+      frontDoor(g,0,.91,1.24,.67,1.27);
+      frontWindow(g,-.90,1.40,1.25,.54,.81,true);
+      frontWindow(g,.90,1.40,1.25,.54,.81,true);
+      sideWindow(g,1.50,1.35,.10,.60,.84);
+      box(g,.48,.60,.49,'#ead2b2',.94,2.97,-.64);
+      box(g,.62,.11,.62,'#bc7260',.94,3.32,-.64);
+      steps(g,1.12,1.49);
+      // 中性白色小圍籬。
+      for(let i=-5;i<=5;i++) box(g,.09,.54,.09,'#fff8e8',i*.32,.35,2.1);
+      box(g,3.37,.11,.10,'#fff8e8',0,.54,2.1);
+      planting(g,-1.50,1.52); planting(g,1.52,1.56);
+      setPick('personal',g,3.75);
+    }
+
+    // ----- 中央大樹：純粹景觀雕塑 -----
+    cyl(SCENE,.23,.32,1.22,6,'#89654c',0,1.61,0);
+    ico(SCENE,1.08,'#78b46c',-.36,2.68,0,0);
+    ico(SCENE,1.0,'#67a971',.57,2.80,-.11,0);
+    ico(SCENE,.97,'#83c47e',0,3.38,.08,0);
+    // 點狀花圃
+    const blossoms=['#f8d9d4','#efbaca','#f5e7a2','#dfbdf0'];
+    for(let i=0;i<42;i++) {
+      const a=range(0,Math.PI*2),r=range(1.57,1.74);
+      ico(SCENE,.09,blossoms[i%4],Math.cos(a)*r,.86,Math.sin(a)*r,0);
+    }
+
+    // 樹木、松樹、灌木與矮花，位置固定，刷新後不會跳動。
+    const reserved=[...Object.values(zonesAt)].map(p=>[p.x,p.z]);
+    function tooCloseToFeatures(x,z) {
+      if(Math.hypot(x,z)<2.1) return true;
+      if(reserved.some(([a,b])=>Math.hypot(x-a,z-b)<2.30)) return true;
+      if(Math.hypot(x,z)<6.9 && Math.abs(x)<.70) return true;
+      return false;
+    }
+    function tree(x,z,size=1,pine=false) {
+      const g=new THREE.Group();g.position.set(x,GROUND,z);
+      cyl(g,.10*size,.15*size,.76*size,6,'#846e50',0,.43*size,0);
+      const shades=['#5da96f','#7bbb6f','#83c77d','#4e9f7f','#92c474'];
+      if(pine) {
+        cyl(g,.15*size,.20*size,.25*size,6,'#826a4e',0,.9*size,0);
+        mesh(g,new THREE.ConeGeometry(.60*size,1.20*size,6),mat(shades[Math.floor(rand()*shades.length)]),0,1.35*size,0);
+        mesh(g,new THREE.ConeGeometry(.45*size,.95*size,6),mat(shades[Math.floor(rand()*shades.length)]),0,1.97*size,0);
+      } else {
+        ico(g,.67*size,shades[Math.floor(rand()*shades.length)],-.10*size,1.23*size,0,0);
+        ico(g,.57*size,shades[Math.floor(rand()*shades.length)],.28*size,1.64*size,.15*size,0);
+      }
+      SCENE.add(g);
+    }
+    const fixedTrees=[[-7.8,-3.1,1.05,1],[-8.35,-.35,.86,0],[-6.90,-5.2,.86,0],[-3.5,-5.55,.92,1],
+      [-2.3,-7.0,.70,1],[2.85,-6.0,1.05,1],[7.48,-4.25,.81,0],[8.5,-1.38,.90,1],
+      [7.75,1.15,.89,0],[7.8,5.30,.82,0],[4.5,6.30,.76,1],[2.60,6.50,.92,1],
+      [-2.40,6.30,.84,0],[-4.0,6.55,.69,1],[-7.25,5.25,.85,1],[-8.50,1.93,.71,0]];
+    fixedTrees.forEach(([x,z,s,p])=>tree(x,z,s,Boolean(p)));
+    for(let i=0;i<47;i++) {
+      const angle=range(0,Math.PI*2),rr=Math.sqrt(rand())*.9;
+      const x=Math.cos(angle)*rr*8.95,z=Math.sin(angle)*rr*6.95;
+      if(tooCloseToFeatures(x,z))continue;
+      if(rand()<.52) tree(x,z,range(.44,.73),rand()<.4);
+      else {
+        ico(SCENE,range(.12,.22),['#5ca36e','#74b77f','#a5cb77'][Math.floor(rand()*3)],x,.84,z,0);
+        if(rand()<.4) ico(SCENE,.08,blossoms[Math.floor(rand()*4)],x+.07,.96,z-.04,0);
+      }
+    }
+    // 海岸沿線岩塊、少量裝飾碎石
+    for(let i=0;i<25;i++) {
+      const a=range(0,2*Math.PI),rr=range(8.45,9.2);
+      const x=Math.cos(a)*rr,z=Math.sin(a)*rr*.8;
+      ico(SCENE,range(.12,.35),['#a9aba3','#c0b8aa','#a3afaa'][i%3],x,.52,z,0);
+    }
+
+    // 遠方幾何雲：低多邊形，不使用圖片或模型檔。
+    for(const [x,y,z,s] of [[-24,15,-26,1.6],[6,17,-36,2.1],[23,13,-25,1.45]]) {
+      const cloud=new THREE.Group(); cloud.position.set(x,y,z);
+      ico(cloud,1.0*s,'#f2f9f9',0,0,0,0);
+      ico(cloud,.76*s,'#eff8f8',1.0*s,-.14*s,.15*s,0);
+      ico(cloud,.77*s,'#ffffff',-.94*s,-.18*s,.14*s,0);
+      cloud.traverse(o=>{if(o.isMesh){o.castShadow=false;o.receiveShadow=false;}});
+      SCENE.add(cloud);
+    }
+
+    // ----- 選取高亮：獨立材質圓環，不改動建築原始材質 -----
+    const ring=mesh(SCENE,new THREE.TorusGeometry(2.2,.055,5,48),mat('#fff4ba',{emissive:'#ffe2a1',emissiveIntensity:.5}),0,.785,0,false);
+    ring.rotation.x=-Math.PI/2;ring.visible=false;ring.receiveShadow=false;
+
+    // ----- HTML 互動：建築標籤、六分類導覽、超連結面板、搜尋 -----
+    const labels=new Map(), navButtons=new Map();
+    const icons={kaohsiung:'▦',school:'▤',youth:'◉',travel:'✈',language:'▣',personal:'⌂'};
+    let activeId=null;
+    let cameraGoal=null,targetGoal=null;
+    for(const [index,zone] of ZONES.entries()) {
+      const b=document.createElement('button');b.type='button';b.className='nav-item';
+      b.innerHTML='<span class="nav-icon" aria-hidden="true">'+icons[zone.id]+'</span>';
+      const bText=document.createElement('span');bText.textContent=zone.name;b.appendChild(bText);
+      b.setAttribute('aria-pressed','false');b.addEventListener('click',()=>openZone(zone.id));
+      nav.appendChild(b);navButtons.set(zone.id,b);
+      const label=document.createElement('button');label.type='button';label.className='map-label';
+      label.style.setProperty('--pin',zone.color);
+      const dot=document.createElement('i');dot.className='label-dot';dot.setAttribute('aria-hidden','true');
+      const group=document.createElement('span');
+      const title=document.createElement('span');title.className='label-title';title.textContent=zone.name;
+      const count=document.createElement('span');count.className='label-count';count.textContent=zone.links.length+' 個工作入口';
+      group.append(title,document.createElement('br'),count); label.append(dot,group);
+      label.setAttribute('aria-label','開啟'+zone.name+'的'+zone.links.length+'個連結');
+      label.setAttribute('aria-pressed','false');
+      label.addEventListener('click',()=>openZone(zone.id));
+      labelLayer.appendChild(label);labels.set(zone.id,label);
+    }
+    function setSelected(id) {
+      for(const [key,b] of navButtons) b.setAttribute('aria-pressed',String(key===id));
+      for(const [key,l] of labels) l.setAttribute('aria-pressed',String(key===id));
+    }
+    function addLinks(zone) {
+      const linkList=document.getElementById('link-list');linkList.replaceChildren();
+      for(const item of zone.links) {
+        const a=document.createElement('a');a.className='link-item';
+        a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';
+        const name=document.createElement('span');name.textContent=item.title;
+        const arrow=document.createElement('span');arrow.className='arrow';arrow.setAttribute('aria-hidden','true');arrow.textContent='↗';
+        a.append(name,arrow);linkList.appendChild(a);
+      }
+      linkList.scrollTop=0;
+    }
+    function openZone(id) {
+      const zone=ZONES.find(z=>z.id===id);if(!zone)return;
+      activeId=id;setSelected(id);
+      const p=zonesAt[id];
+      ring.visible=true;ring.position.set(p.x,.805,p.z);
+      document.getElementById('section-number').textContent=String(ZONES.findIndex(z=>z.id===id)+1).padStart(2,'0');
+      document.getElementById('section-title').textContent=zone.name;
+      document.getElementById('section-description').textContent=zone.description;
+      document.getElementById('section-count').textContent=zone.links.length+' 個工作入口';
+      addLinks(zone);
+      sidebar.classList.add('open');sidebar.setAttribute('aria-hidden','false');
+      // 維持當前水平觀景方向，聚焦到建築附近；鏡頭以緩動方式移動。
+      const facing=new THREE.Vector3().subVectors(camera.position,controls.target).normalize();
+      targetGoal=new THREE.Vector3(p.x,.85,p.z);
+      cameraGoal=targetGoal.clone().addScaledVector(facing,20);
+      if(reducedMotion){camera.position.copy(cameraGoal);controls.target.copy(targetGoal);cameraGoal=null;targetGoal=null;controls.update();}
+      searchResults.hidden=true;searchInput.blur();
+    }
+    function closeZone() {
+      activeId=null;ring.visible=false;
+      sidebar.classList.remove('open');sidebar.setAttribute('aria-hidden','true');
+      setSelected(null);
+    }
+    function resetView() {
+      closeZone();
+      cameraGoal=initialCam.clone();targetGoal=initialTarget.clone();
+      if(reducedMotion){camera.position.copy(cameraGoal);controls.target.copy(targetGoal);cameraGoal=null;targetGoal=null;controls.update();}
+      searchInput.value='';searchResults.hidden=true;
+    }
+    document.getElementById('close-panel').addEventListener('click',closeZone);
+    document.getElementById('reset').addEventListener('click',resetView);
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeZone();searchResults.hidden=true;searchInput.blur();}});
+
+    function updateSearch() {
+      const q=searchInput.value.trim().toLocaleLowerCase();searchResults.replaceChildren();
+      if(!q){searchResults.hidden=true;return;}
+      const hits=ZONES.flatMap(zone=>zone.links.filter(l=>l.title.toLocaleLowerCase().includes(q)||zone.name.includes(q)).map(link=>({zone,link})));
+      searchResults.hidden=false;
+      const meta=document.createElement('div');meta.className='search-meta';meta.textContent='找到 '+hits.length+' 筆連結';searchResults.append(meta);
+      for(const hit of hits) {
+        const a=document.createElement('a');a.className='search-item';a.href=hit.link.url;a.target='_blank';a.rel='noopener noreferrer';
+        const strong=document.createElement('strong');strong.textContent=hit.link.title;
+        const small=document.createElement('small');small.textContent=hit.zone.name+' · 在新分頁開啟 ↗';
+        a.append(strong,small);searchResults.append(a);
+      }
+      if(!hits.length){const empty=document.createElement('div');empty.className='search-meta';empty.textContent='沒有符合的連結';searchResults.append(empty);}
+    }
+    searchInput.addEventListener('input',updateSearch);
+    document.addEventListener('pointerdown',e=>{if(!document.getElementById('search-container').contains(e.target)) searchResults.hidden=true;});
+
+    // Raycaster 只偵測六個 3D 建築；拖曳不觸發點擊。
+    const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2(),canvas=renderer.domElement;
+    function hitId(e) {
+      const r=canvas.getBoundingClientRect();
+      mouse.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+      raycaster.setFromCamera(mouse,camera);
+      const intersections=raycaster.intersectObjects(clickable,false);
+      return intersections.length?intersections[0].object.userData.zone:null;
+    }
+    let down=null;
+    canvas.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;down={id:e.pointerId,x:e.clientX,y:e.clientY};});
+    canvas.addEventListener('pointerup',e=>{
+      if(!down||down.id!==e.pointerId)return;
+      const moved=Math.hypot(e.clientX-down.x,e.clientY-down.y);down=null;
+      if(moved>8)return;
+      const id=hitId(e);if(id)openZone(id);else closeZone();
+    });
+    canvas.addEventListener('pointercancel',()=>down=null);
+    canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'&&!e.buttons)canvas.style.cursor=hitId(e)?'pointer':'grab';});
+    controls.addEventListener('start',()=>{cameraGoal=null;targetGoal=null;});
+
+    function labelsFollow3D() {
+      const w=stage.clientWidth,h=stage.clientHeight;
+      const look=new THREE.Vector3();camera.getWorldDirection(look);
+      for(const zone of ZONES) {
+        const l=labels.get(zone.id),p=anchorById.get(zone.id).clone();
+        const onFront=p.clone().sub(camera.position).dot(look)>0;
+        p.project(camera);
+        const onscreen=onFront && p.z<1 && Math.abs(p.x)<.92 && p.y<.86 && p.y>-.73;
+        l.hidden=!onscreen;
+        if(onscreen){l.style.left=((p.x+1)*.5*w).toFixed(1)+'px';l.style.top=((1-p.y)*.5*h).toFixed(1)+'px';}
+      }
+    }
+    function resize() {
+      const w=stage.clientWidth||innerWidth,h=stage.clientHeight||innerHeight;
+      camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);
+    }
+    addEventListener('resize',resize);resize();
+    const clock=new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const time=clock.getElapsedTime();
+      if(!reducedMotion) {
+        const pos=waterGeo.attributes.position;
+        for(let i=0;i<pos.count;i++) {
+          const x=waterOrigin[i*3],z=waterOrigin[i*3+2];
+          pos.setY(i,waterOrigin[i*3+1]+.09*Math.sin(x*.23+time*.67)+.06*Math.cos(z*.36-time*.55));
+        }
+        pos.needsUpdate=true;
+        for(const f of foams) f.position.y=-2.43+Math.sin(time*.8+f.userData.shift)*.04;
+        if(ring.visible)ring.scale.setScalar(1+Math.sin(time*2.9)*.024);
+      }
+      if(cameraGoal&&targetGoal){
+        camera.position.lerp(cameraGoal,.082);controls.target.lerp(targetGoal,.082);
+        if(camera.position.distanceToSquared(cameraGoal)<.0009&&controls.target.distanceToSquared(targetGoal)<.0009){cameraGoal=null;targetGoal=null;}
+      }
+      controls.update();labelsFollow3D();renderer.render(SCENE,camera);
+    }
+    animate();
+    window.__DANIELWORK_READY__=true;
+    document.getElementById('loading').hidden=true;
+    // 專供人工驗收與測試使用，不修改原有操作流程。
+    window.danielwork={openZone,resetView,zoneCount:ZONES.length,linkCount:ZONES.reduce((n,z)=>n+z.links.length,0)};
+  </script>
+</body>
+</html>
