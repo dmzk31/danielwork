@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#81cbe7">
-  <meta name="description" content="DANIEL 的互動式 3D 工作島：六個工作區域、43 個常用連結，使用 Three.js 製作。">
+  <meta name="description" content="DANIEL 的互動式 3D 工作島：六個工作區域、43 個常用連結，使用 Three.js 製作，採用精緻 3D 微縮景觀、柔和曲面、自然植栽與動態海浪。">
   <title>我的 3D 工作島｜danielwork</title>
   <link rel="stylesheet" href="./css/style.css">
   <!-- Three.js 與 OrbitControls 必須固定為同一版本。無需 Node.js 或建置步驟。 -->
@@ -49,7 +49,7 @@
     <div id="link-list" class="link-list"></div>
     <div class="sidebar-foot">連結會在新分頁開啟；部分 Google 工具需要登入或額外存取權限。</div>
   </aside>
-  <div id="loading" class="loading" role="status"><div class="loading-ring"></div><strong>正在建造工作島</strong><span>載入 Three.js 與 Low-poly 場景…</span></div>
+  <div id="loading" class="loading" role="status"><div class="loading-ring"></div><strong>正在建造工作島</strong><span>載入 Three.js 精緻微縮群島…</span></div>
   <div id="fatal" class="fatal" role="alert" hidden><strong>3D 場景無法載入</strong><p id="fatal-message">請檢查網路連線或瀏覽器的 WebGL 支援。</p><button onclick="location.reload()" type="button">重新載入</button></div>
   <noscript>此網站需要啟用 JavaScript 才能使用 3D 互動及連結選單。</noscript>
   <script>
@@ -69,6 +69,7 @@
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
     // 導覽與連結資料獨立存放於 data/links.js，修改網址不需要動 3D 程式。
     const ZONES = window.DANIEL_WORK_DATA;
@@ -87,8 +88,8 @@
     function range(a,b) { return a + (b-a)*rand(); }
     const sharedMaterials = new Map();
     function mat(color, options) {
-      if (options) return new THREE.MeshStandardMaterial({color,roughness:.83,flatShading:true,...options});
-      if (!sharedMaterials.has(color)) sharedMaterials.set(color, new THREE.MeshStandardMaterial({color,roughness:.88,flatShading:true}));
+      if (options) return new THREE.MeshStandardMaterial({color,roughness:.83,flatShading:false,...options});
+      if (!sharedMaterials.has(color)) sharedMaterials.set(color, new THREE.MeshStandardMaterial({color,roughness:.86,flatShading:false}));
       return sharedMaterials.get(color);
     }
     function mesh(parent, geometry, material, x=0,y=0,z=0, cast=true) {
@@ -97,8 +98,22 @@
       parent.add(m); return m;
     }
     function box(parent,w,h,d,color,x=0,y=0,z=0) { return mesh(parent,new THREE.BoxGeometry(w,h,d),typeof color==='string'?mat(color):color,x,y,z); }
+    // 只在建築外殼、基座及大型家具使用圓角，細小窗框保持清楚線條。
+    function softBox(parent,w,h,d,color,x=0,y=0,z=0,bevel=.08) {
+      const radius=Math.min(bevel,Math.min(w,h,d)*.2);
+      return mesh(parent,new RoundedBoxGeometry(w,h,d,4,radius),typeof color==='string'?mat(color):color,x,y,z);
+    }
+    const smoothSphere=new THREE.SphereGeometry(1,20,14);
+    function softStone(parent,w,h,d,color,x,y,z) {
+      const m=mesh(parent,smoothSphere,typeof color==='string'?mat(color):color,x,y,z);
+      m.scale.set(w,h,d);m.rotation.y=range(-.45,.45);return m;
+    }
+    function canopyBall(parent,r,color,x,y,z,sx=1,sy=1,sz=1) {
+      const o=mesh(parent,smoothSphere,mat(color),x,y,z);
+      o.scale.set(r*sx,r*sy,r*sz);return o;
+    }
     function cyl(parent,rt,rb,h,sides,color,x=0,y=0,z=0) { return mesh(parent,new THREE.CylinderGeometry(rt,rb,h,sides),typeof color==='string'?mat(color):color,x,y,z); }
-    function ico(parent,r,color,x,y,z,detail=0) { return mesh(parent,new THREE.IcosahedronGeometry(r,detail),typeof color==='string'?mat(color):color,x,y,z); }
+    function ico(parent,r,color,x,y,z,detail=2) { return mesh(parent,new THREE.IcosahedronGeometry(r,Math.max(1,detail)),typeof color==='string'?mat(color):color,x,y,z); }
     function line3(parent,points,color,width=.04) {
       for(let i=0;i<points.length-1;i++) {
         const a=new THREE.Vector3(...points[i]),b=new THREE.Vector3(...points[i+1]);
@@ -108,7 +123,7 @@
       }
     }
     const SCENE = new THREE.Scene();
-    SCENE.fog = new THREE.Fog('#9cdbed',55,115);
+    SCENE.fog = new THREE.Fog('#afddeb',64,125);
     const camera = new THREE.PerspectiveCamera(42,1,.1,140);
     const initialCam = new THREE.Vector3(29,31,45);
     const initialTarget = new THREE.Vector3(0,.55,0);
@@ -118,7 +133,7 @@
     catch(e) { showFatal('無法啟動 WebGL，請使用支援 WebGL 的 Chrome 或 Edge。'); throw e; }
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.22;
+    renderer.toneMappingExposure=1.18;
     renderer.shadowMap.enabled=true;
     renderer.shadowMap.type=THREE.PCFSoftShadowMap;
     renderer.setClearColor('#a1d7e4',0);
@@ -157,57 +172,216 @@
     // 全場尺寸以世界單位表示，島面草地約位於 Y = 0.70。
     const GROUND=.70;
 
-    // ----- 低多邊形海洋：實際 Three.js 平面網格與起伏，不是背景圖片 -----
-    const waterGeo=new THREE.PlaneGeometry(150,150,144,144);
+    // ----- V6 水面：桌機 384²、手機 256²；光照與細波紋主要由 GPU Shader 決定 -----
+    // 使用平滑的連續波浪與光照反射，取消 V4 的三角面塊陰影。
+    const waterSegments=matchMedia('(max-width:760px)').matches?256:384;
+    const waterGeo = new THREE.PlaneGeometry(150,150,waterSegments,waterSegments);
     waterGeo.rotateX(-Math.PI/2);
-    const waterOrigin=Float32Array.from(waterGeo.attributes.position.array);
-    const water=mesh(SCENE,waterGeo,mat('#50bad2',{metalness:.05,roughness:.53,flatShading:true,side:THREE.DoubleSide,transparent:true,opacity:.82,depthWrite:false}),0,-2.5,0,false);
-    water.receiveShadow=false; // 半透明水面讓水下魚群可從上方看見。
-    const foamMat=mat('#e8ffff',{transparent:true,opacity:.62,side:THREE.DoubleSide});
+    const waterUniforms={uTime:{value:0}};
+    const waterMaterial=new THREE.ShaderMaterial({
+      uniforms:waterUniforms,
+      transparent:true,depthWrite:false,side:THREE.DoubleSide,
+      vertexShader:`
+        uniform float uTime;
+        varying vec3 vWaterNormal;
+        varying vec3 vWaterWorld;
+        varying float vWave;
+        float surfaceHeight(vec2 p){
+          return .115*sin(p.x*.34 + uTime*.83)
+               + .072*cos(p.y*.43 - uTime*.62)
+               + .036*sin((p.x+p.y)*.76 + uTime*1.22)
+               + .025*cos(length(p)*.51 - uTime*.95);
+        }
+        void main(){
+          vec3 wavePos=position;
+          float h=surfaceHeight(wavePos.xz);
+          wavePos.y+=h;
+          float e=.08;
+          float dx=(surfaceHeight(position.xz+vec2(e,0.))-surfaceHeight(position.xz-vec2(e,0.)))/(2.*e);
+          float dz=(surfaceHeight(position.xz+vec2(0.,e))-surfaceHeight(position.xz-vec2(0.,e)))/(2.*e);
+          vWaterNormal=normalize(mat3(modelMatrix)*normalize(vec3(-dx,1.,-dz)));
+          vWave=h;
+          vec4 worldPos=modelMatrix*vec4(wavePos,1.);
+          vWaterWorld=worldPos.xyz;
+          gl_Position=projectionMatrix*viewMatrix*worldPos;
+        }
+      `,
+      fragmentShader:`
+        uniform float uTime;
+        varying vec3 vWaterNormal;
+        varying vec3 vWaterWorld;
+        varying float vWave;
+        void main(){
+          vec3 n=normalize(vWaterNormal);
+          vec3 lightDir=normalize(vec3(-.42,.84,.28));
+          vec3 viewDir=normalize(cameraPosition-vWaterWorld);
+          float diffuse=max(dot(n,lightDir),0.);
+          float spec=pow(max(dot(n,normalize(lightDir+viewDir)),0.),94.);
+          float fresnel=pow(1.-max(dot(n,viewDir),0.),3.);
+          float wash=smoothstep(-.20,.22,vWave);
+          // 小尺度水紋僅加在反射/色彩上，不靠密集三角面勉強呈現。
+          float ripple=sin(vWaterWorld.x*3.3+uTime*1.4)*cos(vWaterWorld.z*2.8-uTime*.95);
+          float rip2=sin((vWaterWorld.x+vWaterWorld.z)*1.75-uTime*1.3);
+          float micro=.5+.5*(.55*ripple+.45*rip2);
+          float glint=pow(max(micro,0.),12.)*max(diffuse,.1);
+          vec3 deep=vec3(.080,.438,.524);
+          vec3 shallow=vec3(.190,.677,.722);
+          vec3 color=mix(deep,shallow,.34+.50*wash);
+          color*=.80+.20*diffuse;
+          color+=vec3(.44,.51,.49)*spec*.32;
+          color+=vec3(.035,.075,.07)*(micro-.5)+vec3(.20,.23,.21)*glint*.052;
+          color+=vec3(.08,.20,.25)*fresnel*.34;
+          gl_FragColor=vec4(color,.81);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `
+    });
+    const water=mesh(SCENE,waterGeo,waterMaterial,0,-2.5,0,false);
+    water.receiveShadow=false;
+    const foamMat=mat('#e8ffff',{transparent:true,opacity:.40,side:THREE.DoubleSide,depthWrite:false});
     const foams=[];
     for(let i=0;i<90;i++) {
-      const a=range(0,Math.PI*2), r=range(10.0,38.0);
-      const f=mesh(SCENE,new THREE.PlaneGeometry(range(.22,1.2),range(.035,.10)),foamMat,Math.cos(a)*r,-2.44,Math.sin(a)*r,false);
-      f.rotation.x=-Math.PI/2; f.rotation.z=range(-Math.PI,Math.PI); f.userData.shift=range(0,6.28);
-      f.receiveShadow=false; foams.push(f);
+      const a=range(0,Math.PI*2),r=range(10,38);
+      // 輕微彎曲的浪紋而非一片片矩形條帶。
+      const length=range(.23,1.0),bend=range(-.08,.08);
+      const curve=new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-length/2,0,0),
+        new THREE.Vector3(0,0,bend),
+        new THREE.Vector3(length/2,0,0)
+      ]);
+      const f=mesh(SCENE,new THREE.TubeGeometry(curve,6,.014,5,false),foamMat,
+        Math.cos(a)*r,-2.42,Math.sin(a)*r,false);
+      f.rotation.y=range(-Math.PI,Math.PI);
+      f.userData.shift=range(0,Math.PI*2);
+      f.receiveShadow=false;foams.push(f);
     }
 
-    // ----- 七座獨立小島：一座中央招牌島 + 六座主題島，64 面細緻多邊形 -----
-    const SEG=64;
+    // ----- V6 微縮島嶼：320 邊緣 × 56 徑向 × 24 岩層，平滑共享頂點 -----
+    // V4 的「每個三角形獨立隨機顏色」與「由中心放射的大三角形」是方塊切面感主因。
+    // 不再使用不共用頂點的三角形；地表、沙灘與岩壁採有索引的共用網格。
+    const SEG=320;
+    const RADIAL=56;
+    const CLIFF_LEVELS=24;
     const zonesAt={
-      kaohsiung:{x:-10.5,z:-7.1}, school:{x:0,z:-12.0}, youth:{x:10.5,z:-7.1},
-      travel:{x:-10.5,z:7.1}, language:{x:0,z:12.0}, personal:{x:10.5,z:7.1}
+      kaohsiung:{x:-10.5,z:-7.1},school:{x:0,z:-12.0},youth:{x:10.5,z:-7.1},
+      travel:{x:-10.5,z:7.1},language:{x:0,z:12.0},personal:{x:10.5,z:7.1}
     };
+    function smoothstep(a,b,t){
+      const x=THREE.MathUtils.clamp((t-a)/(b-a),0,1);
+      return x*x*(3-2*x);
+    }
+    const shoreFoams=[];
     function landmass(cx,cz,rx,rz,seedOffset=0){
-      const rim=[];
-      for(let i=0;i<SEG;i++)rim.push(1+.028*Math.sin(i*1.73+seedOffset)+.018*Math.sin(i*3.6+seedOffset*2));
-      const pos=[],colors=[];
-      const rock=['#a5aaa5','#b2b0a6','#a3b1ae','#cbc4b4','#929e9c','#b6b6ac','#aaa49b'];
-      const sand=['#e9d5ab','#e7d1a3','#f1dfb6','#edd6a5'];
-      const turf=['#83c17d','#89c77e','#82bd78','#90c984','#8cbe7b','#78b773','#9bcf89'];
-      function pt(i,r,y){const a=i/SEG*Math.PI*2,k=rim[i%SEG];return [cx+Math.cos(a)*rx*r*k,y,cz+Math.sin(a)*rz*r*k]}
-      function tri(a,b,c,palette){const color=new THREE.Color(palette[Math.floor(rand()*palette.length)]);for(const v of [a,b,c]){pos.push(...v);colors.push(color.r,color.g,color.b)}}
-      for(let i=0;i<SEG;i++){
-        const j=(i+1)%SEG;
-        const outer=pt(i,1,.43),next=pt(j,1,.43),mid=pt(i,.91,.65),mid2=pt(j,.91,.65);
-        const low=pt(i,.94,-1.34),low2=pt(j,.94,-1.34),deep=pt(i,.72,-3.0),deep2=pt(j,.72,-3.0);
-        tri(outer,next,low2,rock);tri(outer,low2,low,rock);
-        tri(low,low2,deep2,rock);tri(low,deep2,deep,rock);
-        tri(outer,mid2,next,sand);tri(outer,mid,mid2,sand);
-        const grass=pt(i,.78,.72),grass2=pt(j,.78,.72);
-        tri(mid,grass,grass2,turf);tri(mid,grass2,mid2,turf);
-        const center=[cx,.72,cz];tri(grass,center,grass2,turf);
+      const green=new THREE.Color('#8cc682');
+      const shoreGreen=new THREE.Color('#a9c990');
+      const sand=new THREE.Color('#ead7b0');
+      const stoneTop=new THREE.Color('#c4b8a9');
+      const stoneDeep=new THREE.Color('#939fa2');
+      function radiusAt(a){
+        // 海岸線連續起伏，避免逐段亂數造成的鋸齒。
+        return 1+.045*Math.sin(a*3+seedOffset*.63)
+                +.020*Math.sin(a*7-seedOffset*.79)
+                +.009*Math.cos(a*13+seedOffset*1.2);
       }
-      const geo=new THREE.BufferGeometry();
-      geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-      geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-      geo.computeVertexNormals();
-      mesh(SCENE,geo,mat('#ffffff',{vertexColors:true,side:THREE.DoubleSide}),0,0,0,false);
-      // 岸邊細石帶加強尺寸層次，不使用大型方格網格。
+      function altitude(r,a){
+        // 建築所在中央保持平穩，島緣有非常柔和的起伏，不產生尖銳斜面。
+        const hill=(.048*Math.sin(a*3.7+seedOffset)*Math.sin(r*5.2)
+                   +.019*Math.sin(a*8.2-seedOffset*.3)*Math.sin(r*7.1))
+                   *smoothstep(.24,.49,r)*(1-smoothstep(.73,.91,r));
+        return .735+hill-.275*smoothstep(.78,1,r);
+      }
+      function addVertex(store,x,y,z,color){
+        store.positions.push(x,y,z);
+        store.colors.push(color.r,color.g,color.b);
+      }
+      function makeGeo(store){
+        const g=new THREE.BufferGeometry();
+        g.setAttribute('position',new THREE.Float32BufferAttribute(store.positions,3));
+        g.setAttribute('color',new THREE.Float32BufferAttribute(store.colors,3));
+        g.setIndex(store.indices);
+        g.computeVertexNormals();
+        return g;
+      }
+      const top={positions:[],colors:[],indices:[]};
+      addVertex(top,cx,altitude(0,0),cz,green);
+      for(let j=1;j<=RADIAL;j++){
+        const r=j/RADIAL;
+        for(let i=0;i<SEG;i++){
+          const a=i/SEG*Math.PI*2;
+          const stretch=radiusAt(a);
+          const x=cx+Math.cos(a)*rx*r*stretch;
+          const z=cz+Math.sin(a)*rz*r*stretch;
+          // 從青草自然過渡到沙灘，色彩依頂點插值，避免一片片三角形色塊。
+          const mixSand=smoothstep(.79,.92,r);
+          const c=green.clone().lerp(shoreGreen,smoothstep(.63,.80,r));
+          c.lerp(sand,mixSand);
+          const grain=.987+.014*Math.sin(x*.9+z*.63)
+                         +.012*Math.cos(x*1.7-z*.67);
+          c.multiplyScalar(grain);
+          addVertex(top,x,altitude(r,a),z,c);
+        }
+      }
+      for(let i=0;i<SEG;i++) top.indices.push(0,1+(i+1)%SEG,1+i);
+      for(let j=2;j<=RADIAL;j++){
+        const inner=1+(j-2)*SEG,outer=1+(j-1)*SEG;
+        for(let i=0;i<SEG;i++){
+          const next=(i+1)%SEG;
+          top.indices.push(inner+i,outer+next,outer+i);
+          top.indices.push(inner+i,inner+next,outer+next);
+        }
+      }
+      mesh(SCENE,makeGeo(top),mat('#ffffff',{
+        flatShading:false,vertexColors:true,side:THREE.DoubleSide,
+        roughness:1
+      }),0,0,0,false);
+
+      const cliff={positions:[],colors:[],indices:[]};
+      for(let j=0;j<=CLIFF_LEVELS;j++){
+        const depth=j/CLIFF_LEVELS;
+        for(let i=0;i<SEG;i++){
+          const a=i/SEG*Math.PI*2;
+          const contour=radiusAt(a);
+          const r=1-.265*smoothstep(0,1,depth);
+          const x=cx+Math.cos(a)*rx*r*contour;
+          const z=cz+Math.sin(a)*rz*r*contour;
+          const y=THREE.MathUtils.lerp(altitude(1,a),-3,depth)
+            +.026*Math.sin(a*9+seedOffset)*Math.sin(Math.PI*depth);
+          const c=stoneTop.clone().lerp(stoneDeep,smoothstep(.02,.95,depth));
+          c.multiplyScalar(.975+.019*Math.sin(a*4.0+seedOffset)
+                             +.016*Math.cos(a*8.0-depth*3.2));
+          addVertex(cliff,x,y,z,c);
+        }
+      }
+      for(let j=0;j<CLIFF_LEVELS;j++){
+        const upper=j*SEG,lower=(j+1)*SEG;
+        for(let i=0;i<SEG;i++){
+          const next=(i+1)%SEG;
+          cliff.indices.push(upper+i,upper+next,lower+i);
+          cliff.indices.push(upper+next,lower+next,lower+i);
+        }
+      }
+      mesh(SCENE,makeGeo(cliff),mat('#ffffff',{
+        flatShading:false,vertexColors:true,side:THREE.DoubleSide,roughness:.97
+      }),0,0,0,false);
+      // 海面交界連續弧形泡沫：是真正的水線而非一塊塊平面條帶。
+      const shoreline=[];
+      for(let n=0;n<=SEG;n++) {
+        const a=n/SEG*Math.PI*2;
+        const contour=radiusAt(a);
+        const r=.795;
+        shoreline.push(new THREE.Vector3(cx+Math.cos(a)*rx*r*contour,-2.405,cz+Math.sin(a)*rz*r*contour));
+      }
+      const shorelineGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(shoreline,true,'catmullrom',.3),SEG,.034,5,true);
+      const shorelineMaterial=mat('#eaf6ee',{transparent:true,opacity:.56,depthWrite:false,roughness:.65});
+      const shoreFoam=mesh(SCENE,shorelineGeo,shorelineMaterial,0,0,0,false);
+      shoreFoam.receiveShadow=false;
+      shoreFoams.push(shoreFoam);
+      // 小石塊採平滑卵石；不使用大顆多面體碎石。
       for(let n=0;n<11;n++){
-        const a=range(0,Math.PI*2),r=range(.83,.94);
+        const a=range(0,Math.PI*2),r=range(.84,.93);
         const x=cx+Math.cos(a)*rx*r,z=cz+Math.sin(a)*rz*r;
-        ico(SCENE,range(.10,.25),rock[n%rock.length],x,.70,z,0);
+        softStone(SCENE,range(.12,.21),range(.06,.10),range(.13,.25),'#b9b7aa',x,.66,z);
       }
     }
     landmass(0,0,2.7,2.7,.8);
@@ -251,8 +425,8 @@
     const signMaterial=new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide});
     mesh(SCENE,new THREE.PlaneGeometry(2.13,1.04),signMaterial,0,2.26,.14,false);
     const signBack=mesh(SCENE,new THREE.PlaneGeometry(2.13,1.04),signMaterial,0,2.26,-.14,false);signBack.rotation.y=Math.PI;
-    for(let i=0;i<22;i++){
-      const a=i*Math.PI*2/22;
+    for(let i=0;i<30;i++){
+      const a=i*Math.PI*2/30;
       ico(SCENE,.065,['#f7d4d3','#ebd3ee','#f6d98b'][i%3],Math.cos(a)*2.14,.79,Math.sin(a)*2.14,0);
     }
 
@@ -262,8 +436,14 @@
       const st=new THREE.Vector3(p.x,0,p.z).addScaledVector(outward,-3.27);
       const ed=new THREE.Vector3(p.x,0,p.z).addScaledVector(outward,-1.48);
       const d=ed.clone().sub(st),m=st.clone().add(ed).multiplyScalar(.5);
-      const strip=box(SCENE,.82,.045,d.length(),'#e6d4b8',m.x,.752,m.z);
-      strip.rotation.y=Math.atan2(d.x,d.z);
+      // 小顆圓角石板取代整片矩形步道，減少大面積方塊與直線邊緣。
+      for(let i=0;i<=11;i++){
+        const q=st.clone().lerp(ed,i/11);
+        const o=softStone(SCENE,.43,.035,.27,i%3?'#e9d8ba':'#f1e3ca',
+          q.x,.759+(i%2)*.003,q.z);
+        o.rotation.y=Math.atan2(d.x,d.z)+range(-.10,.10);
+        o.receiveShadow=false;
+      }
     }
 
     // ----- 共用建築零件 -----
@@ -291,13 +471,16 @@
       anchorById.set(id,new THREE.Vector3(p.x,GROUND+anchor*BUILDING_SCALE+.25,p.z));
     }
     function foundation(g,w,d) {
-      box(g,w+.4,.18,d+.42,'#d6c5a6',0,.09,0);
-      box(g,w+.25,.06,d+.23,'#f7e5cb',0,.20,0);
+      softBox(g,w+.4,.18,d+.42,'#d6c5a6',0,.09,0,.065);
+      softBox(g,w+.25,.06,d+.23,'#f7e5cb',0,.20,0,.025);
     }
     function frontWindow(g,x,y,z,w=.58,h=.78,warm=false) {
       box(g,w+.12,h+.12,.11,cream,x,y,z);
-      box(g,w,h,.13,warm?glassWarm:glass,x,y,z+.082);
+      softBox(g,w,h,.13,warm?glassWarm:glass,x,y,z+.082,.024);
       box(g,w+.16,.10,.22,darkTrim,x,y+h/2+.09,z+.08);
+      // 超細玻璃分格：保留具辨識度的門窗，不做粗方格。
+      box(g,.025,h,.035,'#e7f1e8',x,y,z+.161);
+      box(g,w,.024,.035,'#e7f1e8',x,y-.02,z+.163);
     }
     function sideWindow(g,x,y,z,w=.57,h=.78) {
       box(g,.11,h+.10,w+.10,cream,x,y,z);
@@ -305,7 +488,7 @@
     }
     function frontDoor(g,x,y,z,w=.68,h=1.12) {
       box(g,w+.15,h+.14,.13,'#f0e7cd',x,y,z);
-      box(g,w,h,.14,door,x,y,z+.083);
+      softBox(g,w,h,.14,door,x,y,z+.083,.028);
       box(g,.08,.08,.16,'#ffdba8',x+w*.28,y,z+.18);
     }
     function slopeRoof(g,w,d,y,height,color) {
@@ -321,7 +504,7 @@
     // 01：高雄召會 → 現代綜合辦公中心，無宗教建築或符號。
     {
       const g=new THREE.Group();foundation(g,3.35,2.45);
-      box(g,3.35,2.6,2.45,'#edd7ad',0,1.55,0);
+      softBox(g,3.35,2.6,2.45,'#edd7ad',0,1.55,0,.09);
       box(g,3.42,.16,2.65,'#537f94',0,2.97,0);
       box(g,3.02,.18,2.25,'#65abc3',0,3.07,-.10);
       box(g,3.38,.15,.52,'#f5ecdf',0,2.47,1.50);
@@ -341,7 +524,7 @@
     // 02：中學組 → 紅磚校舍與球場。
     {
       const g=new THREE.Group(); foundation(g,3.56,2.55);
-      box(g,3.56,2.47,2.55,'#dca173',0,1.46,0);
+      softBox(g,3.56,2.47,2.55,'#dca173',0,1.46,0,.075);
       box(g,3.86,.18,2.88,'#658c9c',0,2.79,0);
       box(g,3.55,.12,.22,'#f4ddb9',0,2.24,1.36);
       for(const x of [-1.27,-.45,.45,1.27]) {
@@ -370,12 +553,12 @@
     // 03：社青組 → 現代玻璃活動中心，波形屋頂，不用任何宗教符號。
     {
       const g=new THREE.Group();foundation(g,3.50,2.70);
-      box(g,3.50,2.32,2.70,'#dcb186',0,1.43,0);
+      softBox(g,3.50,2.32,2.70,'#dcb186',0,1.43,0,.11);
       box(g,3.2,1.77,.08,mat('#6dacae'),0,1.49,1.41);
       for(const x of [-1.15,-.38,.38,1.15]) frontWindow(g,x,1.53,1.53,.54,1.37,true);
       frontDoor(g,0,.90,1.54,.73,1.22);
       box(g,3.92,.16,3.1,'#638c9b',0,2.66,0);
-      const canopy=box(g,4.08,.24,3.15,'#e4e0cb',0,2.82,0);
+      const canopy=softBox(g,4.08,.24,3.15,'#e4e0cb',0,2.82,0,.07);
       canopy.rotation.z=.10;
       for(const x of [-1.40,1.40]) box(g,.13,.90,.13,'#fff1d8',x,.45,1.94);
       box(g,3.40,.13,.80,'#e9deca',0,2.04,1.73);
@@ -387,7 +570,7 @@
     // 04：帶團出國 → 港口旅行服務站與立體船隻。
     {
       const g=new THREE.Group();foundation(g,3.12,2.12);
-      box(g,3.12,1.97,2.12,'#f6deaa',0,1.28,0);
+      softBox(g,3.12,1.97,2.12,'#f6deaa',0,1.28,0,.09);
       slopeRoof(g,3.5,2.58,2.27,.72,roofBlue);
       frontDoor(g,0,.91,1.12,.72,1.25);
       frontWindow(g,-1.0,1.28,1.12,.57,.76,true);
@@ -404,7 +587,7 @@
       for(const x of [-13.30,-11.58]) for(const z of [9.86,11.23,12.53]) cyl(SCENE,.10,.10,.84,7,'#987553',x,-1.16,z);
       // 簡單幾何遊艇，停在碼頭旁的海面上。
       const boat=new THREE.Group();boat.position.set(-15.0,-2.02,11.8);
-      mesh(boat,new THREE.ConeGeometry(.77,2.9,4),mat('#eef2e8'),0,.15,0).rotation.x=Math.PI/2;
+      mesh(boat,new THREE.ConeGeometry(.77,2.9,12),mat('#eef2e8'),0,.15,0).rotation.x=Math.PI/2;
       box(boat,.98,.43,1.20,'#f8f0d7',0,.59,0);
       box(boat,.80,.31,.55,glass,0,.91,-.10);
       box(boat,.05,1.66,.05,'#e9dfc7',.17,1.85,0);
@@ -416,7 +599,7 @@
     // 05：外語專項 → 玻璃圖書／學習中心（不做宗教風格塔樓）。
     {
       const g=new THREE.Group();foundation(g,3.22,2.34);
-      box(g,3.22,2.16,2.34,'#e1e9d7',0,1.37,0);
+      softBox(g,3.22,2.16,2.34,'#e1e9d7',0,1.37,0,.10);
       box(g,3.28,.16,2.58,'#718a9a',0,2.56,0);
       box(g,3.30,.14,2.58,'#e7eadb',0,2.67,-.10);
       for(const x of [-1.04,-.35,.35,1.04]) frontWindow(g,x,1.53,1.25,.52,1.36,true);
@@ -431,7 +614,7 @@
     // 06：個人使用 → 紅頂生活小屋與庭院。
     {
       const g=new THREE.Group();foundation(g,2.87,2.33);
-      box(g,2.87,2.03,2.33,'#f8e8c8',0,1.27,0);
+      softBox(g,2.87,2.03,2.33,'#f8e8c8',0,1.27,0,.10);
       slopeRoof(g,3.29,2.75,2.38,.94,roofRed);
       frontDoor(g,0,.91,1.24,.67,1.27);
       frontWindow(g,-.90,1.40,1.25,.54,.81,true);
@@ -490,16 +673,28 @@
 
     // ----- 各島配置高密度細緻植栽，主島保持招牌視野清楚 -----
     const blossoms=['#f8d9d4','#efbaca','#f5e7a2','#dfbdf0'];
+    const foliageColors=['#67ad77','#75b982','#91c88b','#529b73','#a0c992'];
+    const foliageMats=foliageColors.map(c=>mat(c,{roughness:1}));
     function tree(x,z,size=1,pine=false) {
       const g=new THREE.Group();g.position.set(x,GROUND,z);
-      cyl(g,.095*size,.14*size,.76*size,8,'#846e50',0,.42*size,0);
-      const shades=['#5da96f','#7bbb6f','#83c77d','#4e9f7f','#92c474'];
+      cyl(g,.075*size,.125*size,.83*size,16,'#8c765b',0,.42*size,0);
+      function puff(px,py,pz,rad,color){
+        const m=mesh(g,smoothSphere,foliageMats[color%foliageMats.length],px*size,py*size,pz*size);
+        m.scale.set(rad*size,rad*.85*size,rad*.92*size);
+      }
       if(pine){
-        mesh(g,new THREE.ConeGeometry(.55*size,1.05*size,8),mat(shades[Math.floor(rand()*shades.length)]),0,1.21*size,0);
-        mesh(g,new THREE.ConeGeometry(.40*size,.88*size,8),mat(shades[Math.floor(rand()*shades.length)]),0,1.70*size,0);
+        // 柔和針葉樹：使用重疊圓錐與密實球冠，避免單一尖銳多面錐。
+        const pineColor=foliageMats[Math.floor(rand()*foliageMats.length)];
+        for(const [r,h,yy] of [[.48,.85,1.13],[.38,.82,1.54],[.28,.67,1.89]]){
+          const m=mesh(g,new THREE.ConeGeometry(r*size,h*size,24,3),pineColor,0,yy*size,0);
+          m.castShadow=true;
+        }
       } else {
-        ico(g,.53*size,shades[Math.floor(rand()*shades.length)],-.12*size,1.26*size,0,1);
-        ico(g,.46*size,shades[Math.floor(rand()*shades.length)],.24*size,1.56*size,.13*size,1);
+        const start=Math.floor(rand()*foliageMats.length);
+        puff(-.28,1.27,-.12,.46,start);
+        puff(.20,1.43,.05,.52,start+1);
+        puff(.05,1.74,-.10,.38,start+2);
+        puff(.12,1.31,-.27,.40,start+3);
       }
       SCENE.add(g);
     }
@@ -518,32 +713,68 @@
       for(let i=0;i<25;i++){
         const a=range(0,Math.PI*2),r=range(1.8,3.35);
         const x=p.x+Math.cos(a)*r,z=p.z+Math.sin(a)*r*.86;
-        ico(SCENE,range(.07,.15),['#5ca36e','#74b77f','#a5cb77'][i%3],x,.83,z,1);
-        if(i%3===0)ico(SCENE,.055,blossoms[i%4],x+.045,.91,z-.05,0);
+        softStone(SCENE,range(.09,.16),range(.07,.14),range(.09,.16),
+          ['#62a874','#78b782','#9fc68d'][i%3],x,.81,z);
+        if(i%3===0)canopyBall(SCENE,.045,blossoms[i%4],x+.045,.91,z-.05);
       }
     });
 
+    // 小型公園設施（所有島保持建築僅佔島寬 1/3 的比例）。
+    function gardenBench(x,z,turn=0){
+      const g=new THREE.Group();g.position.set(x,GROUND,z);g.rotation.y=turn;
+      for(const dx of [-.34,.34]){
+        cyl(g,.028,.035,.33,8,'#7c766a',dx,.17,-.10);
+        cyl(g,.028,.035,.35,8,'#7c766a',dx,.18,.19);
+      }
+      for(const dz of [-.06,.06]) softBox(g,.85,.055,.115,'#c69e73',0,.34,dz,.025);
+      for(const yy of [.48,.61])softBox(g,.83,.052,.10,'#bd906e',0,yy,-.25,.025);
+      SCENE.add(g);
+    }
+    function gardenLantern(x,z){
+      const g=new THREE.Group();g.position.set(x,GROUND,z);
+      cyl(g,.035,.049,.73,12,'#687f80',0,.39,0);
+      softBox(g,.23,.22,.23,'#f8eac8',0,.88,0,.065);
+      softBox(g,.30,.052,.30,'#6e9295',0,1.015,0,.025);
+      SCENE.add(g);
+    }
+    [
+      [-10.5,-7.1,-2.45,1.45],
+      [10.5,-7.1,2.2,1.55],
+      [0,12,-2.0,1.65],
+      [10.5,7.1,2.18,1.45]
+    ].forEach(([x,z,dx,dz],i)=>{
+      gardenBench(x+dx,z+dz,i%2?-.28:.32);
+      gardenLantern(x+dx+.63,z+dz+.25);
+    });
+
     const animatedClouds=[];
-    // 遠方幾何雲：低多邊形，不使用圖片或模型檔。
+    // 遠方棉絮狀平滑立體雲，不顯示大型多面體切面。
     for(const [x,y,z,s] of [[-24,15,-26,1.6],[6,17,-36,2.1],[23,13,-25,1.45]]) {
       const cloud=new THREE.Group(); cloud.position.set(x,y,z);
-      ico(cloud,1.0*s,'#f2f9f9',0,0,0,0);
-      ico(cloud,.76*s,'#eff8f8',1.0*s,-.14*s,.15*s,0);
-      ico(cloud,.77*s,'#ffffff',-.94*s,-.18*s,.14*s,0);
+      canopyBall(cloud,1.04*s,'#f4f9f9',0,0,0,1.02,.68,.85);
+      canopyBall(cloud,.82*s,'#eef7f8',1.0*s,-.15*s,.10*s,1,.69,.81);
+      canopyBall(cloud,.83*s,'#ffffff',-.93*s,-.12*s,.12*s,1,.76,.77);
+      canopyBall(cloud,.57*s,'#ffffff',-.20*s,.43*s,-.23*s,1,.86,1);
       cloud.traverse(o=>{if(o.isMesh){o.castShadow=false;o.receiveShadow=false;}});
       SCENE.add(cloud);
       animatedClouds.push({node:cloud,startX:x,velocity:range(.30,.60),phase:range(0,6.28)});
     }
 
-    // ----- 港灣巡航小船：路線避開各島與橋樑；每艘船沿封閉曲線移動 -----
+    // ----- 船殼曲面與曲線巡航：沿島嶼外環行駛 -----
     // 固定的港口遊艇保留；另外兩艘船在群島外環巡航。
     const movingBoats=[];
     function createCruiseBoat(color, trim) {
       const g=new THREE.Group();
-      // 尖頭船身（船首朝 +Z）：保持與船首方向一致。
-      const hull=mesh(g,new THREE.CylinderGeometry(.55,.40,.48,6),mat(color),0,.08,0);
-      hull.scale.z=2.35; hull.rotation.y=Math.PI/6;
-      box(g,.73,.24,1.15,trim,0,.45,-.1);
+      // 圓弧船首的微縮船殼，取代圓柱縮放造成的多面桶狀輪廓。
+      const outline=new THREE.Shape();
+      outline.moveTo(0,1.18);
+      outline.bezierCurveTo(.43,.99,.58,.42,.56,-.30);
+      outline.bezierCurveTo(.53,-.89,.26,-1.14,0,-1.16);
+      outline.bezierCurveTo(-.26,-1.14,-.53,-.89,-.56,-.30);
+      outline.bezierCurveTo(-.58,.42,-.43,.99,0,1.18);
+      const hull=mesh(g,new THREE.ExtrudeGeometry(outline,{depth:.33,steps:1,bevelEnabled:true,bevelThickness:.07,bevelSize:.045,bevelSegments:3,curveSegments:12}),mat(color),0,.17,0);
+      hull.rotation.x=-Math.PI/2;
+      softBox(g,.73,.24,1.15,trim,0,.48,-.1,.055);
       box(g,.54,.40,.56,'#bde8ea',0,.76,-.18);
       box(g,.64,.075,.62,'#fff2d9',0,1.0,-.18);
       for(const x of [-.31,.31]) box(g,.06,.12,.26,'#f9f5df',x,.54,.1);
@@ -562,7 +793,7 @@
     const fishSchools=[];
     function makeFish(color,scale=1){
       const g=new THREE.Group();
-      const body=mesh(g,new THREE.SphereGeometry(.27,8,5),mat(color),0,0,0,false);
+      const body=mesh(g,new THREE.SphereGeometry(.27,16,10),mat(color),0,0,0,false);
       body.scale.set(1,.55,1.9);
       const tail=mesh(g,new THREE.ConeGeometry(.18,.38,3),mat(color),0,0,-.57,false);
       tail.rotation.x=-Math.PI/2;
@@ -590,7 +821,7 @@
       const g=new THREE.Group();
       const feather=mat('#f6f5eb',{side:THREE.DoubleSide});
       const beak=mat('#ebad59');
-      const body=mesh(g,new THREE.SphereGeometry(.16,7,5),feather,0,0,0,false);
+      const body=mesh(g,new THREE.SphereGeometry(.16,14,9),feather,0,0,0,false);
       body.scale.z=1.7;
       const left=new THREE.Group(),right=new THREE.Group();
       left.position.x=-.12;right.position.x=.12;
@@ -773,14 +1004,11 @@
           b.left.rotation.z=-.25-.42*Math.sin(time*5.2+b.phase);
           b.right.rotation.z=.25+.42*Math.sin(time*5.2+b.phase);
         }
-        const pos=waterGeo.attributes.position;
-        for(let i=0;i<pos.count;i++) {
-          const x=waterOrigin[i*3],z=waterOrigin[i*3+2];
-          pos.setY(i,waterOrigin[i*3+1]+.12*Math.sin(x*.30+time*.75)+.08*Math.cos(z*.44-time*.59)+.038*Math.sin((x+z)*.82+time*1.35));
-        }
-        pos.needsUpdate=true;
-        waterGeo.computeVertexNormals();
+        waterUniforms.uTime.value=time;
         for(const f of foams) f.position.y=-2.43+Math.sin(time*.8+f.userData.shift)*.04;
+        for(let i=0;i<shoreFoams.length;i++){
+          shoreFoams[i].material.opacity=.42+.13*Math.sin(time*.71+i*.9);
+        }
         if(ring.visible)ring.scale.setScalar(1+Math.sin(time*2.9)*.024);
       }
       if(cameraGoal&&targetGoal){
@@ -793,7 +1021,7 @@
     window.__DANIELWORK_READY__=true;
     document.getElementById('loading').hidden=true;
     // 專供人工驗收與測試使用，不修改原有操作流程。
-    window.danielwork={openZone,resetView,controls,gestureButton,movingBoats,fishSchools,birds,animatedClouds,zoneCount:ZONES.length,linkCount:ZONES.reduce((n,z)=>n+z.links.length,0)};
+    window.danielwork={openZone,resetView,controls,gestureButton,movingBoats,fishSchools,birds,animatedClouds,waterUniforms,terrainSegments:SEG,terrainRadial:RADIAL,terrainCliffLevels:CLIFF_LEVELS,waterSegments,zoneCount:ZONES.length,linkCount:ZONES.reduce((n,z)=>n+z.links.length,0)};
   </script>
 </body>
 </html>
